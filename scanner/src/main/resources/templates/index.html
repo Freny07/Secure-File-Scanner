@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure File Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', sans-serif;
+            background: #0f0f1a;
+            color: white;
+        }
+
+        .container-fluid {
+            padding: 40px;
+        }
+
+        .glass {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 0 30px rgba(0, 198, 255, 0.15);
+        }
+
+        .title {
+            font-size: 42px;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00c6ff, #6a11cb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #aaa;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        input {
+            background: rgba(255,255,255,0.08) !important;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            color: white !important;
+        }
+
+        input::placeholder {
+            color: #bbb !important;
+        }
+
+        .btn-scan {
+            background: linear-gradient(45deg, #6a11cb, #2575fc);
+            border: none;
+            transition: 0.3s;
+        }
+
+        .btn-scan:hover {
+            transform: scale(1.05);
+        }
+
+        .btn-export {
+            background: linear-gradient(45deg, #00c6ff, #0072ff);
+            border: none;
+            transition: 0.3s;
+        }
+
+        .btn-export:hover {
+            transform: scale(1.05);
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.04);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            transition: 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 0 15px rgba(0,198,255,0.4);
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .results {
+            margin-top: 30px;
+            background: rgba(0,0,0,0.35);
+            border-radius: 15px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .result-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-8px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .high { color: #ff4d4d; }
+        .medium { color: #ffcc00; }
+        .low { color: #00ff99; }
+
+        .delete-btn {
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        footer strong {
+            color: #00c6ff;
+        }
+
+
+    </style>
+
+</head>
+<body>
+
+<div class="container-fluid">
+
+    <div class="glass">
+
+        <div class="text-center">
+            <div class="title"> >> Secure File Scanner <<</div>
+            <div class="subtitle">Threat Detection • Pattern Analysis • File Integrity Monitoring</div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <input type="text" id="folderPath" class="form-control"
+                       placeholder="Enter folder path (C:/testfolder)">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-scan w-100" onclick="scanFolder()">Scan</button>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-export w-100" onclick="exportReport()">Export</button>
+            </div>
+        </div>
+
+        <div class="row text-center mb-4">
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div id="totalCount" class="stat-number">0</div>
+                    <div>Total Issues</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div id="highCount" class="stat-number high">0</div>
+                    <div>High Risk</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div id="mediumCount" class="stat-number medium">0</div>
+                    <div>Medium Risk</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="results" class="results"></div>
+
+    </div>
+
+</div>
+
+<script>
+
+    function animateCounter(id, value) {
+        let count = 0;
+        const element = document.getElementById(id);
+        const interval = setInterval(() => {
+            count++;
+            element.innerText = count;
+            if (count >= value) clearInterval(interval);
+        }, 20);
+    }
+
+    function scanFolder() {
+
+        const path = document.getElementById("folderPath").value;
+        const resultsDiv = document.getElementById("results");
+
+        if (!path) {
+            alert("Enter folder path!");
+            return;
+        }
+
+        resultsDiv.innerHTML = "Scanning...";
+
+        fetch("http://localhost:8081/scanner/scan?path=" + encodeURIComponent(path))
+            .then(response => response.json())
+            .then(data => {
+
+                resultsDiv.innerHTML = "";
+
+                animateCounter("totalCount", data.length);
+
+                let high = 0;
+                let medium = 0;
+
+                data.forEach(item => {
+
+                    if (item.includes("Risk: High")) high++;
+                    if (item.includes("Risk: Medium")) medium++;
+
+                    let cssClass = "";
+                    if (item.includes("Risk: High")) cssClass = "high";
+                    else if (item.includes("Risk: Medium")) cssClass = "medium";
+                    else if (item.includes("Risk: Low")) cssClass = "low";
+
+                    let filePath = null;
+
+                    if (item.includes("File:")) {
+                        filePath = item.split(" | ")[0].replace("File: ", "");
+                    }
+
+                    resultsDiv.innerHTML += `
+                    <div class="result-item ${cssClass}">
+                        ${item}
+                        ${filePath ? `<button class="btn btn-sm btn-danger delete-btn"
+                        onclick="deleteFile('${filePath.replace(/\\/g,'\\\\')}')">
+                        Delete</button>` : ""}
+                    </div>
+                `;
+                });
+
+                animateCounter("highCount", high);
+                animateCounter("mediumCount", medium);
+
+                // Show Scan Completed message
+                const completedMsg = document.createElement("div");
+                completedMsg.innerText = "✔ Scan Completed Successfully";
+                completedMsg.style.color = "#00ff99";
+                completedMsg.style.marginTop = "15px";
+                completedMsg.style.fontWeight = "bold";
+                completedMsg.style.textAlign = "center";
+                resultsDiv.appendChild(completedMsg);
+
+            });
+    }
+
+    function deleteFile(path) {
+        if (!confirm("Delete file?\n" + path)) return;
+
+        fetch("http://localhost:8081/scanner/delete?path=" + encodeURIComponent(path), {
+            method: "DELETE"
+        })
+            .then(response => response.text())
+            .then(msg => {
+                alert(msg);
+                scanFolder();
+            });
+    }
+
+    function exportReport() {
+
+        const folder = document.getElementById("folderPath").value;
+
+        if (!folder) {
+            alert("Enter folder path first!");
+            return;
+        }
+
+        const exportPath = prompt("Enter export file path (C:/test/report.txt)");
+
+        if (!exportPath) return;
+
+        fetch(`http://localhost:8081/scanner/export?folder=${encodeURIComponent(folder)}&exportPath=${encodeURIComponent(exportPath)}`, {
+            method: "POST"
+        })
+            .then(response => response.text())
+            .then(msg => alert(msg));
+    }
+
+</script>
+
+<footer style="
+    background-color: #0a0a14;
+    padding: 18px 0;
+    margin-top: 60px;
+    text-align: center;
+    border-top: 1px solid rgba(255,255,255,0.08);
+">
+    <div style="color:#9aa0a6; font-size:13px;">
+        Developed by <strong style="color:#00c6ff;">FRENY</strong> | Secure File Scanner | @2026
+    </div>
+</footer>
+
+
+
+
+</body>
+</html>

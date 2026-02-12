@@ -1,0 +1,6 @@
+Security Scan Report
+----------------------
+File: C:\testfolder\file3.txt | Pattern: XSS Script | Risk: Medium | Line: 1
+File: C:\testfolder\hello.txt | Pattern: Email | Risk: Low | Line: 2
+----------------------
+Total Issues Found: 2
