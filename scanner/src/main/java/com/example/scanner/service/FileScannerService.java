@@ -1,17 +1,17 @@
 package com.example.scanner.service;
 
+import com.example.scanner.model.ScanResult;
 import org.springframework.stereotype.Service;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
-import java.util.regex.*;
+import java.util.regex.Pattern;
 
 @Service
-
 public class FileScannerService {
-
-    // -------- REGEX PATTERNS --------
 
     private final Pattern emailPattern =
             Pattern.compile("[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+");
@@ -19,50 +19,85 @@ public class FileScannerService {
     private final Pattern creditCardPattern =
             Pattern.compile("\\b\\d{16}\\b");
 
-    private final Pattern scriptPattern =
-            Pattern.compile("(?i)<script.*?>");
-
     private final Pattern sqlPattern =
             Pattern.compile("(?i)drop\\s+table");
 
+    private final Pattern scriptPattern =
+            Pattern.compile("(?i)<script.*?>");
 
-    // -------- SCAN DIRECTORY --------
+    public List<ScanResult> scanDirectory(String folderPath, String sortOrder) {
 
-    public List<String> scanDirectory(String folderPath) {
-
-        List<String> report = new ArrayList<>();
+        List<ScanResult> results = new ArrayList<>();
 
         try {
             Files.walk(Paths.get(folderPath))
                     .filter(Files::isRegularFile)
-                    .filter(path -> !path.toFile().isHidden())
+                    .filter(p -> !p.toFile().isHidden())
                     .filter(this::isTextFile)
-                    .filter(this::isSmallEnough)
-                    .forEach(path -> scanFile(path, report));
+                    .forEach(path -> scanFile(path, results));
 
         } catch (IOException e) {
             e.printStackTrace();
         }
 
-        return report;
+        if ("asc".equalsIgnoreCase(sortOrder)) {
+            results.sort(Comparator.comparingLong(ScanResult::getFileSize));
+        } else if ("desc".equalsIgnoreCase(sortOrder)) {
+            results.sort((a, b) -> Long.compare(b.getFileSize(), a.getFileSize()));
+        }
+
+        return results;
     }
 
-
-    // -------- SCAN SINGLE FILE --------
-
-    private void scanFile(Path path, List<String> report) {
+    private void scanFile(Path path, List<ScanResult> results) {
 
         try {
             List<String> lines = Files.readAllLines(path);
-            int lineNumber = 0;
+            long size = Files.size(path);
 
+            int lineNumber = 0;
             for (String line : lines) {
                 lineNumber++;
 
-                checkPattern(line, emailPattern, "Email", "Low", path, lineNumber, report);
-                checkPattern(line, creditCardPattern, "Credit Card", "High", path, lineNumber, report);
-                checkPattern(line, scriptPattern, "XSS Script", "Medium", path, lineNumber, report);
-                checkPattern(line, sqlPattern, "SQL Injection", "High", path, lineNumber, report);
+                if (emailPattern.matcher(line).find()) {
+                    results.add(new ScanResult(
+                            path.toString(),
+                            "Email (PII)",
+                            "Low",
+                            lineNumber,
+                            size
+                    ));
+                }
+
+                if (creditCardPattern.matcher(line).find()) {
+                    results.add(new ScanResult(
+                            path.toString(),
+                            "Credit Card (PII)",
+                            "High",
+                            lineNumber,
+                            size
+                    ));
+                }
+
+                if (sqlPattern.matcher(line).find()) {
+                    results.add(new ScanResult(
+                            path.toString(),
+                            "SQL Injection",
+                            "High",
+                            lineNumber,
+                            size
+                    ));
+                }
+
+                if (scriptPattern.matcher(line).find()) {
+                    results.add(new ScanResult(
+                            path.toString(),
+                            "XSS Script",
+                            "Medium",
+                            lineNumber,
+                            size
+                    ));
+                }
             }
 
         } catch (IOException e) {
@@ -70,93 +105,44 @@ public class FileScannerService {
         }
     }
 
-
-    // -------- PATTERN CHECK --------
-
-    private void checkPattern(String line,
-                              Pattern pattern,
-                              String type,
-                              String risk,
-                              Path path,
-                              int lineNumber,
-                              List<String> report) {
-
-        Matcher matcher = pattern.matcher(line);
-
-        if (matcher.find()) {
-
-            String entry = "File: " + path.toString()
-                    + " | Pattern: " + type
-                    + " | Risk: " + risk
-                    + " | Line: " + lineNumber;
-
-            report.add(entry);
-        }
-    }
-
-
-    // -------- FILE TYPE FILTER --------
-
     private boolean isTextFile(Path path) {
-
         String name = path.toString().toLowerCase();
-
-        return name.endsWith(".txt")
-                || name.endsWith(".java")
-                || name.endsWith(".html")
-                || name.endsWith(".js")
-                || name.endsWith(".css");
+        return name.endsWith(".txt") ||
+                name.endsWith(".java") ||
+                name.endsWith(".html") ||
+                name.endsWith(".js") ||
+                name.endsWith(".css");
     }
 
-
-    // -------- FILE SIZE LIMIT (5MB) --------
-
-    private boolean isSmallEnough(Path path) {
-
+    public boolean deleteFile(String path) {
         try {
-            return Files.size(path) < 5 * 1024 * 1024;
+            return Files.deleteIfExists(Paths.get(path));
         } catch (IOException e) {
             return false;
         }
     }
 
+    public String exportLog(List<ScanResult> results, String exportPath) {
 
-    // -------- DELETE FILE --------
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(exportPath))) {
 
-    public boolean deleteFile(String filePath) {
+            writer.write("Secure File Scanner Report\n");
+            writer.write("Generated at: " + new Date() + "\n\n");
 
-        try {
-            return Files.deleteIfExists(Paths.get(filePath));
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
-
-    // -------- EXPORT LOG --------
-
-    public String exportLog(List<String> report, String outputPath) {
-
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath))) {
-
-            writer.write("Security Scan Report");
-            writer.newLine();
-            writer.write("----------------------");
-            writer.newLine();
-
-            for (String entry : report) {
-                writer.write(entry);
-                writer.newLine();
+            for (ScanResult r : results) {
+                writer.write(
+                        r.getFilePath() + " | " +
+                                r.getPatternType() + " | " +
+                                r.getRiskLevel() + " | Line " +
+                                r.getLineNumber() + " | Size " +
+                                r.getFileSize() + " bytes\n"
+                );
             }
 
-            writer.write("----------------------");
-            writer.newLine();
-            writer.write("Total Issues Found: " + report.size());
-
-            return "Log exported successfully.";
+            return "Report exported successfully";
 
         } catch (IOException e) {
-            return "Error exporting log.";
+            return "Error exporting report";
         }
     }
 }
